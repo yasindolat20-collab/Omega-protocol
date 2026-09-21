@@ -1,72 +1,92 @@
 import csv
+import os
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-def load_data(filename="simulation_llm.csv"):
-    rows = []
-    with open(filename, "r", encoding="utf-8") as f:
-        reader = csv.DictReader(f)
-        for r in reader:
-            rows.append(r)
-    return rows
 
-def plot_all(filename="simulation_llm.csv"):
+def load_data(filename):
+    with open(filename, "r", encoding="utf-8", newline="") as handle:
+        return list(csv.DictReader(handle))
+
+
+def choose_file(primary="simulation_llm.csv", fallback="simulation.csv"):
+    if os.path.exists(primary):
+        return primary
+    if os.path.exists(fallback):
+        return fallback
+    raise FileNotFoundError(f"No simulation data found at {primary!r} or {fallback!r}.")
+
+
+def plot_all(filename=None):
+    if filename is None:
+        filename = choose_file()
     rows = load_data(filename)
-    steps = [int(r["step"]) for r in rows]
+    if not rows:
+        raise ValueError(f"No rows in {filename!r}.")
+    steps = [int(r.get("step", i + 1)) for i, r in enumerate(rows)]
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
-    # نمودار ۱: توزیع اعمال
     ax = axes[0, 0]
-    ax.plot(steps, [int(r["loyalty"]) for r in rows], label="Loyalty", color="blue")
-    ax.plot(steps, [int(r["exit"]) for r in rows], label="Exit", color="orange")
-    ax.plot(steps, [int(r["voice"]) for r in rows], label="Voice", color="green")
-    ax.plot(steps, [int(r["rebellion"]) for r in rows], label="Rebellion", color="red")
-    ax.set_title("Action Distribution over Time")
-    ax.set_xlabel("Step"); ax.set_ylabel("Count")
-    ax.legend(); ax.grid(True, alpha=0.3)
+    ax.plot(steps, [int(r.get("loyalty", 0)) for r in rows], label="Loyalty", color="blue")
+    ax.plot(steps, [int(r.get("exit", 0)) for r in rows], label="Exit", color="orange")
+    ax.plot(steps, [int(r.get("voice", 0)) for r in rows], label="Voice", color="green")
+    ax.plot(steps, [int(r.get("rebellion", 0)) for r in rows], label="Rebellion", color="red")
+    ax.set_title("Action Distribution")
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Count")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
 
-    # نمودار ۲: متغیرهای محیط
     ax = axes[0, 1]
-    ax.plot(steps, [float(r["economy"]) for r in rows], label="Economy", color="darkgreen")
-    ax.plot(steps, [float(r["legitimacy"]) for r in rows], label="Legitimacy", color="purple")
-    ax.plot(steps, [float(r["military"]) for r in rows], label="Military", color="brown")
-    ax.plot(steps, [float(r["treasury"]) for r in rows], label="Treasury", color="gold")
+    ax.plot(steps, [float(r.get("economy", 0.0)) for r in rows], label="Economy", color="darkgreen")
+    ax.plot(steps, [float(r.get("legitimacy", 0.0)) for r in rows], label="Legitimacy", color="purple")
+    ax.plot(steps, [float(r.get("military", 0.0)) for r in rows], label="Military", color="brown")
+    ax.plot(steps, [float(r.get("treasury", 0.0)) for r in rows], label="Treasury", color="gold")
     ax.set_title("Environment Variables")
-    ax.set_xlabel("Step"); ax.set_ylabel("Value")
-    ax.legend(); ax.grid(True, alpha=0.3)
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Value")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
 
-    # نمودار ۳: سهم اعمال (Stacked)
     ax = axes[1, 0]
-    loy = [int(r["loyalty"]) for r in rows]
-    ext = [int(r["exit"]) for r in rows]
-    voi = [int(r["voice"]) for r in rows]
-    reb = [int(r["rebellion"]) for r in rows]
+    loy = [int(r.get("loyalty", 0)) for r in rows]
+    ext = [int(r.get("exit", 0)) for r in rows]
+    voi = [int(r.get("voice", 0)) for r in rows]
+    reb = [int(r.get("rebellion", 0)) for r in rows]
     ax.stackplot(steps, loy, ext, voi, reb,
                  labels=["Loyalty", "Exit", "Voice", "Rebellion"],
                  colors=["blue", "orange", "green", "red"], alpha=0.7)
-    ax.set_title("Stacked Action Share")
-    ax.set_xlabel("Step"); ax.set_ylabel("Count")
-    ax.legend(loc="upper right"); ax.grid(True, alpha=0.3)
+    ax.set_title("Stacked Actions")
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Count")
+    ax.legend(loc="upper right")
+    ax.grid(True, alpha=0.3)
 
-    # نمودار ۴: شوک‌ها
     ax = axes[1, 1]
-    shock_steps = [int(r["step"]) for r in rows if r["shock"]]
-    shock_types = [r["shock"] for r in rows if r["shock"]]
-    colors = {"war": "red", "famine": "orange", "crisis": "purple"}
-    for s, t in zip(shock_steps, shock_types):
-        ax.axvline(x=s, color=colors.get(t, "gray"), alpha=0.5, linestyle="--")
-    ax.plot(steps, [float(r["legitimacy"]) for r in rows], color="purple", label="Legitimacy")
-    ax.plot(steps, [float(r["economy"]) for r in rows], color="green", label="Economy")
+    shock_present = "shock" in rows[0].keys() if rows[0] else False
+    if shock_present:
+        shock_steps = [int(r["step"]) for r in rows if r.get("shock")]
+        shock_types = [r.get("shock") for r in rows if r.get("shock")]
+        color_map = {"war": "red", "famine": "orange", "crisis": "purple"}
+        for s, t in zip(shock_steps, shock_types):
+            ax.axvline(x=s, color=color_map.get(t, "gray"), alpha=0.6, linestyle="--")
+    ax.plot(steps, [float(r.get("legitimacy", 0.0)) for r in rows], color="purple", label="Legitimacy")
+    ax.plot(steps, [float(r.get("economy", 0.0)) for r in rows], color="green", label="Economy")
     ax.set_title("Shocks vs Environment")
-    ax.set_xlabel("Step"); ax.set_ylabel("Value")
-    ax.legend(); ax.grid(True, alpha=0.3)
+    ax.set_xlabel("Step")
+    ax.set_ylabel("Value")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
 
     plt.tight_layout()
-    plt.savefig("simulation_plot.png", dpi=100)
-    print("Saved plot to simulation_plot.png")
-    return True
+    out_path = "simulation_plot.png"
+    plt.savefig(out_path, dpi=100)
+    print(f"Saved {out_path}")
+    return out_path
+
 
 if __name__ == "__main__":
     plot_all()
