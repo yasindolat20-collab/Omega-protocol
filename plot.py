@@ -3,7 +3,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-def load_data(filename="simulation.csv"):
+def load_data(filename="simulation_llm.csv"):
     rows = []
     with open(filename, "r", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -11,7 +11,7 @@ def load_data(filename="simulation.csv"):
             rows.append(r)
     return rows
 
-def plot_all(filename="simulation.csv"):
+def plot_all(filename="simulation_llm.csv"):
     rows = load_data(filename)
     steps = [int(r["step"]) for r in rows]
 
