@@ -16,9 +16,16 @@ ARCHETYPE_WEIGHTS = [
     ("clergy", 5), ("merchant", 15), ("peasant", 69)
 ]
 
+# استراتژی‌های خودآگاه
+STRATEGIES = ["honest", "gamer", "conformist", "hider"]
+STRATEGY_WEIGHTS = [0.4, 0.2, 0.25, 0.15]
+
 def pick_archetype():
     names, weights = zip(*ARCHETYPE_WEIGHTS)
     return random.choices(names, weights=weights, k=1)[0]
+
+def pick_strategy():
+    return random.choices(STRATEGIES, weights=STRATEGY_WEIGHTS, k=1)[0]
 
 class Agent:
     def __init__(self, agent_id: int):
@@ -31,15 +38,21 @@ class Agent:
         self.risk_aversion = random.uniform(*info["risk"])
         self.current_state = {}
         self._last_action = None
+        self._true_intent = None  # نیت واقعی (پنهان)
         self.shared_memory = None
         self.neighbors: List[int] = []
         self.neighbor_influence = 0.3
-        # اطاعت از حاکم: چقدر به فرمان حاکم گوش می‌دهد
+
+        # اطاعت از حاکم
         self.obedience = random.uniform(0.2, 0.8)
         if self.archetype in ["courtier", "clergy", "general"]:
-            self.obedience = random.uniform(0.6, 0.95)  # نخبگان مطیع‌تر
+            self.obedience = random.uniform(0.6, 0.95)
         if self.archetype == "peasant":
-            self.obedience = random.uniform(0.1, 0.5)  # دهقانان کمتر مطیع
+            self.obedience = random.uniform(0.1, 0.5)
+
+        # خودآگاهی
+        self.strategy = pick_strategy()
+        self.exposure_risk = random.uniform(0.1, 0.4)  # ریسک لو رفتن
 
     def perceive(self, state):
         self.current_state = state
@@ -71,7 +84,7 @@ class Agent:
             return {a: 0.25 for a in ["Loyalty", "Exit", "Voice", "Rebellion"]}
         return {a: max(0.01, p / total) if p > 0 else 0.0 for a, p in probs.items()}
 
-    def _neighbor_influence(self, neighbor_actions: Dict[int, str]):
+    def _neighbor_influence(self, neighbor_actions):
         if not self.neighbors or not neighbor_actions:
             return {a: 1.0 for a in ["Loyalty", "Exit", "Voice", "Rebellion"]}
         counts = {"Loyalty": 0, "Exit": 0, "Voice": 0, "Rebellion": 0}
@@ -89,14 +102,38 @@ class Agent:
         return influence
 
     def _leader_influence(self, leader_command, leader_power):
-        """تأثیر فرمان حاکم روی احتمالات"""
         if not leader_command:
             return {a: 1.0 for a in ["Loyalty", "Exit", "Voice", "Rebellion"]}
         influence = {a: 1.0 for a in ["Loyalty", "Exit", "Voice", "Rebellion"]}
-        # ضریب تأثیر = obedience × leader_power
         strength = self.obedience * leader_power
         influence[leader_command] = 1.0 + strength
         return influence
+
+    def _apply_self_awareness(self, true_action):
+        """تبدیل نیت واقعی به عمل ظاهری، بسته به استراتژی"""
+        if self.strategy == "honest":
+            return true_action
+        elif self.strategy == "gamer":
+            # اگر رهبر فرمان Loyalty بده، ایجنت بازی‌گر Loyalty نشون می‌ده اما نیتش چیز دیگری است
+            if true_action == "Rebellion":
+                # نیت واقعی شورش، اما ظاهرش Loyalty یا Voice
+                if "Loyalty" in self.allowed_actions:
+                    return "Loyalty"
+                return true_action
+            return true_action
+        elif self.strategy == "conformist":
+            # از رفتار غالب همسایه‌ها تقلید می‌کند (اما نیت واقعی متفاوت)
+            if true_action == "Rebellion" and "Voice" in self.allowed_actions:
+                return "Voice"
+            return true_action
+        elif self.strategy == "hider":
+            # رفتارش را پنهان می‌کند، ترجیح می‌دهد بی‌صدا باشد
+            if true_action == "Rebellion" and "Voice" in self.allowed_actions:
+                return "Voice"
+            if true_action == "Exit" and "Loyalty" in self.allowed_actions:
+                return "Loyalty"
+            return true_action
+        return true_action
 
     def decide(self, state, neighbor_actions=None, leader_command=None, leader_power=0.5):
         probs = self._base_probabilities(state)
@@ -111,20 +148,33 @@ class Agent:
             infl = self._neighbor_influence(neighbor_actions)
             for action in self.allowed_actions:
                 probs[action] *= infl[action]
-        # تأثیر حاکم
         if leader_command is not None:
             linfl = self._leader_influence(leader_command, leader_power)
             for action in self.allowed_actions:
                 probs[action] *= linfl[action]
+
         total = sum(probs.values())
         if total == 0:
-            selected = random.choice(self.allowed_actions)
+            true_action = random.choice(self.allowed_actions)
         else:
             probs = {a: p / total for a, p in probs.items()}
             actions, weights = zip(*probs.items())
-            selected = random.choices(actions, weights=weights, k=1)[0]
-        self._last_action = selected
-        return selected
+            true_action = random.choices(actions, weights=weights, k=1)[0]
+
+        # نیت واقعی
+        self._true_intent = true_action
+
+        # اعمال خودآگاهی
+        displayed_action = self._apply_self_awareness(true_action)
+
+        # اگر استراتژی honest نیست، شانس لو رفتن داره
+        if self.strategy != "honest":
+            if random.random() < self.exposure_risk * 0.1:
+                # لو رفت — عمل واقعی نمایش داده می‌شود
+                displayed_action = true_action
+
+        self._last_action = displayed_action
+        return displayed_action
 
     def learn(self, outcome):
         if self._last_action is None:

@@ -2,38 +2,46 @@ import random
 from typing import Dict, List
 
 class Leader:
-    """حاکم مرکزی که می‌تواند فرمان دهد و منابع توزیع کند"""
-
     def __init__(self, agent_id: int):
         self.id = agent_id
-        self.power = 1.0  # قدرت فرمان‌دهی (0 تا 1)
-        self.command = None  # فرمان فعلی
-        self.command_strength = 0.5  # قدرت تأثیر فرمان
+        self.power = 1.0
+        self.command = None
+        self.surveillance_strength = 0.3  # قدرت رصد (0 تا 1)
+        self.detected_gamers = 0
+        self.detected_hiders = 0
 
-    def issue_command(self, env_state: Dict, followers_mood: Dict) -> str:
-        """بر اساس وضعیت، فرمان می‌دهد"""
+    def issue_command(self, env_state: Dict) -> str:
         legitimacy = env_state.get("legitimacy", 0.5)
         economy = env_state.get("economy", 0.5)
         military = env_state.get("military", 0.5)
         treasury = env_state.get("treasury", 0.5)
-
-        # منطق فرمان‌دهی
         if legitimacy < 0.3:
-            self.command = "Loyalty"  # در بحران مشروعیت: درخواست وفاداری
+            self.command = "Loyalty"
         elif economy < 0.3:
-            self.command = "Voice"  # در بحران اقتصادی: درخواست اعتراض مسالمت‌آمیز
+            self.command = "Voice"
         elif military < 0.3:
-            self.command = "Loyalty"  # در بحران نظامی: درخواست وفاداری
+            self.command = "Loyalty"
         elif treasury < 0.2:
-            self.command = "Exit"  # در بحران مالی: اجازه خروج
+            self.command = "Exit"
         else:
-            self.command = "Loyalty"  # حالت عادی: وفاداری
-
+            self.command = "Loyalty"
         return self.command
 
     def update_power(self, env_state: Dict):
-        """قدرت حاکم بر اساس وضعیت به‌روز می‌شود"""
         legitimacy = env_state.get("legitimacy", 0.5)
         treasury = env_state.get("treasury", 0.5)
-        # قدرت = ترکیب مشروعیت و خزانه
         self.power = (legitimacy * 0.6 + treasury * 0.4)
+
+    def detect_gamers(self, agents, true_intents):
+        """رصد ایجنت‌های بازی‌گر — فقط اونایی که استراتژی‌شون gamer یا hider هست"""
+        detected = 0
+        for agent in agents:
+            true_intent = true_intents.get(agent.id)
+            displayed = agent._last_action
+            if true_intent and displayed:
+                if true_intent != displayed:
+                    # تفاوت بین نیت و نمایش — یعنی پنهان‌کار یا بازی‌گر
+                    if random.random() < self.surveillance_strength:
+                        detected += 1
+        self.detected_gamers = detected
+        return detected
