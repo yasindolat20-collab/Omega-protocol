@@ -1,5 +1,5 @@
 import random
-from typing import Dict
+from typing import Dict, List
 from memory import Memory
 
 ARCHETYPES = {
@@ -32,12 +32,23 @@ class Agent:
         self.current_state = {}
         self._last_action = None
         self.shared_memory = None
+        self.neighbors: List[int] = []
+        self.neighbor_influence = 0.3
+        # اطاعت از حاکم: چقدر به فرمان حاکم گوش می‌دهد
+        self.obedience = random.uniform(0.2, 0.8)
+        if self.archetype in ["courtier", "clergy", "general"]:
+            self.obedience = random.uniform(0.6, 0.95)  # نخبگان مطیع‌تر
+        if self.archetype == "peasant":
+            self.obedience = random.uniform(0.1, 0.5)  # دهقانان کمتر مطیع
 
     def perceive(self, state):
         self.current_state = state
 
     def set_shared_memory(self, shared):
         self.shared_memory = shared
+
+    def set_neighbors(self, neighbors):
+        self.neighbors = neighbors
 
     def _base_probabilities(self, state):
         probs = {a: 0.0 for a in ["Loyalty", "Exit", "Voice", "Rebellion"]}
@@ -60,7 +71,34 @@ class Agent:
             return {a: 0.25 for a in ["Loyalty", "Exit", "Voice", "Rebellion"]}
         return {a: max(0.01, p / total) if p > 0 else 0.0 for a, p in probs.items()}
 
-    def decide(self, state):
+    def _neighbor_influence(self, neighbor_actions: Dict[int, str]):
+        if not self.neighbors or not neighbor_actions:
+            return {a: 1.0 for a in ["Loyalty", "Exit", "Voice", "Rebellion"]}
+        counts = {"Loyalty": 0, "Exit": 0, "Voice": 0, "Rebellion": 0}
+        valid = 0
+        for nid in self.neighbors:
+            if nid in neighbor_actions:
+                counts[neighbor_actions[nid]] += 1
+                valid += 1
+        if valid == 0:
+            return {a: 1.0 for a in ["Loyalty", "Exit", "Voice", "Rebellion"]}
+        influence = {}
+        for action in counts:
+            share = counts[action] / valid
+            influence[action] = 1.0 + self.neighbor_influence * share
+        return influence
+
+    def _leader_influence(self, leader_command, leader_power):
+        """تأثیر فرمان حاکم روی احتمالات"""
+        if not leader_command:
+            return {a: 1.0 for a in ["Loyalty", "Exit", "Voice", "Rebellion"]}
+        influence = {a: 1.0 for a in ["Loyalty", "Exit", "Voice", "Rebellion"]}
+        # ضریب تأثیر = obedience × leader_power
+        strength = self.obedience * leader_power
+        influence[leader_command] = 1.0 + strength
+        return influence
+
+    def decide(self, state, neighbor_actions=None, leader_command=None, leader_power=0.5):
         probs = self._base_probabilities(state)
         for action in self.allowed_actions:
             rate = self.memory.success_rate(action)
@@ -69,6 +107,15 @@ class Agent:
             for action in self.allowed_actions:
                 global_rate = self.shared_memory.global_success_rate(action)
                 probs[action] *= (0.7 + 0.6 * global_rate)
+        if neighbor_actions is not None:
+            infl = self._neighbor_influence(neighbor_actions)
+            for action in self.allowed_actions:
+                probs[action] *= infl[action]
+        # تأثیر حاکم
+        if leader_command is not None:
+            linfl = self._leader_influence(leader_command, leader_power)
+            for action in self.allowed_actions:
+                probs[action] *= linfl[action]
         total = sum(probs.values())
         if total == 0:
             selected = random.choice(self.allowed_actions)
